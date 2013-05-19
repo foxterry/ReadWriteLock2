@@ -1,0 +1,146 @@
+unit TestReadWrite;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
+  Dialogs, ReadWriteLock, StdCtrls;
+
+type
+  TForm1 = class(TForm)
+    Memo1: TMemo;
+    Button1: TButton;
+    Button2: TButton;
+    procedure FormCreate(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
+    procedure Button2Click(Sender: TObject);
+  private
+    FList: TList;
+  public
+    FReadWrite: TReadWriteLock;
+  end;
+
+
+  TReadWriteThread = Class(TThread)
+  private
+    FIsReadThread: Boolean;
+    FIsWorking: Boolean;
+    FLock: TReadWriteLock;
+    procedure PrintInfo;
+  protected
+    procedure Execute; override;
+  public
+   constructor Create(const ALock: TReadWriteLock; const AIsRead: Boolean); reintroduce;
+
+  end;
+
+var
+  Form1: TForm1;
+
+implementation
+
+uses
+  Math;
+
+{$R *.dfm}
+
+function GetRandNum: Integer;
+begin
+  Result :=  RandomRange(500, 2000);
+end;
+
+procedure TForm1.FormCreate(Sender: TObject);
+var
+  nThreadCount, I: Integer;
+  workThread: TReadWriteThread;
+begin
+  Memo1.Clear;
+  FReadWrite := TReadWriteLock.Create;
+  FList := TList.Create;
+
+  nThreadCount := RandomRange(8, 16);
+  for I:=0 to nThreadCount-1 do
+  begin
+    if I <> 0 then
+      workThread := TReadWriteThread.Create(FReadWrite, true)
+    else
+      workThread := TReadWriteThread.Create(FReadWrite, False);
+
+    FList.add(workThread);
+  end;
+end;
+
+{ TReadThread }
+
+constructor TReadWriteThread.Create(const ALock: TReadWriteLock; const AIsRead: Boolean);
+begin
+  inherited Create(False);
+  FreeOnTerminate := True;
+  FLock := ALock;
+  FIsReadThread := AIsRead;
+  FIsWorking := False;
+end;
+
+procedure TReadWriteThread.Execute;
+begin
+  while True do
+  begin
+    Sleep(GetRandNum);
+    if FIsReadThread then   FLock.AcquireReadLock
+    else FLock.AcquireWriteLock;
+   
+    FIsWorking := True;
+    Synchronize(PrintInfo);
+    if FIsReadThread then  FLock.ReleaseReadLock
+    else FLock.ReleaseWriteLock;
+
+    Sleep(GetRandNum);
+    FIsWorking := False;
+    Synchronize(PrintInfo);
+  end;
+end;
+
+
+procedure TReadWriteThread.PrintInfo;
+var
+  sInfo: String;
+begin
+  sInfo := Format('ReadCount: %d ID: %d ', [FLock.ReadCount, Self.ThreadID]);
+  if FIsReadThread then
+    begin
+       if FIsWorking then sInfo := sInfo + 'is reading'
+       else  sInfo := sInfo + 'finish reading';
+    end
+  else
+    begin
+       if FIsWorking then  sInfo := sInfo + 'is writing'
+       else  sInfo := sInfo + 'finish writing';
+    end;
+  Form1.Memo1.Lines.Add(sInfo);
+end;
+
+procedure TForm1.Button1Click(Sender: TObject);
+var
+  I: Integer;
+  workThread: TReadWriteThread;
+begin
+  for I:=0 to FList.Count-1 do
+  begin
+    workThread := TReadWriteThread(FList.Items[I]);
+    workThread.Suspend;
+  end;
+end;
+
+procedure TForm1.Button2Click(Sender: TObject);
+var
+  I: Integer;
+  workThread: TReadWriteThread;
+begin
+  for I:=0 to FList.Count-1 do
+  begin
+    workThread := TReadWriteThread(FList.Items[I]);
+    workThread.Resume;
+  end;
+end;
+
+end.
